@@ -20,18 +20,27 @@ impl Network {
 }
 
 impl Network {
-    pub fn inference(&mut self, dataset_path: &str, learning_dist: f32, min_potential: f32, epochs_num: u16, a: f32, b: f32) {
-        
-        let (dataset, normalized, names) = prepare_dataset(dataset_path);
-        
-        
-        self.train(&normalized, learning_dist, min_potential, epochs_num, a, b);
+    pub fn inference(&mut self, dataset: &Vec<Vec<f32>>) -> Vec<u8> {
+        let mut res =vec![];
+        for j in 0..dataset.len() {
+            let mut min_distance = f32::MAX;
+            let mut winner_index = 0;
+            for i in 0..self.neurons.len() {
+                let dist = calculate_distance(&dataset[j], &self.neurons[i].weights);
+                if dist < min_distance {
+                    min_distance = dist;
+                    winner_index = i;
+                }
+            }
+            res.push(winner_index as u8);
+        }
 
+        res
     }
 }
 
 impl Network {
-    fn train(&mut self, dataset: &Vec<Vec<f32>>, learning_dist: f32, min_potential: f32, epochs_num: u16, a: f32, b: f32) {
+    pub fn train(&mut self, dataset: &Vec<Vec<f32>>, learning_dist: f32, min_potential: f32, epochs_num: u16, a: f32, b: f32) {
         let neurons_num = self.neurons.len() as u8;
         for e in 0..epochs_num {
             let mut sum = 0.0;
@@ -39,35 +48,39 @@ impl Network {
                 let mut min_distance = f32::MAX;
                 let mut winner_index = 0;
                 for i in 0..self.neurons.len() {
-                    let dist = calculate_distance(&dataset[j], &self.neurons[i].weights);
-                    if dist < min_distance {
-                        min_distance = dist;
-                        winner_index = i;
+                    if self.neurons[i].get_potential() > min_potential {
+                        let dist = calculate_distance(&dataset[j], &self.neurons[i].weights);
+                        if dist < min_distance {
+                            min_distance = dist;
+                            winner_index = i;
+                        }
                     }
                 }
-                let mut neurons_to_train: Vec<usize> = vec![winner_index];
-                for i in 0..self.neurons.len() {
-                    if i == winner_index {
-                        continue;
-                    }
+                let neurons_to_train: Vec<usize> = vec![winner_index];
+                // for i in 0..self.neurons.len() {
+                //     if i == winner_index {
+                //         continue;
+                //     }
 
-                    let dist = calculate_distance(&self.neurons[winner_index].weights, &self.neurons[i].weights);
-                    if dist < learning_dist {
-                        neurons_to_train.push(i);
-                    }
-                }
+                //     let dist = calculate_distance(&self.neurons[winner_index].weights, &self.neurons[i].weights);
+                //     if dist < learning_dist && self.neurons[i].get_potential() > min_potential {
+                //         neurons_to_train.push(i);
+                //     }
+                // }
+                // println!("Neurons to train: {:?}", neurons_to_train);
 
-                sum += sub_vectors(&dataset[j], &self.neurons[winner_index].weights).iter().sum::<f32>() / dataset[j].len() as f32;
+                sum += f32::powi(sub_vectors(&dataset[j], &self.neurons[winner_index].weights).iter().sum::<f32>() / dataset[j].len() as f32, 2);
 
-                for index in &neurons_to_train {
-                    if self.neurons[*index].get_potential() > min_potential {
-                        self.neurons[*index].weights = sum_vectors(&self.neurons[*index].weights, 
-                            &sub_vectors(&dataset[j], &self.neurons[*index].weights).iter()
-                            .map(|x| x * coefficient_fun(min_distance, j, a, b)).collect());
-                        self.neurons[*index].change_potential_winner(min_potential);
-                    }
+                for i in 0..neurons_to_train.len() {
+                    let index = neurons_to_train[i];
+                    // println!("Changing weights of neuron: {:?}", index);
+                    let sub = sub_vectors(&dataset[j], &self.neurons[index].weights);
 
-                    self.neurons[*index].change_potential(neurons_num);
+                    let mul_by = learning_rate_func(e, a, b);
+
+                    self.neurons[index].weights = sum_vectors(&self.neurons[index].weights,&mult_by(&sub, mul_by));
+
+                    self.neurons[index].change_potential_winner(min_potential);
                 }
 
                 for i in 0..self.neurons.len() {
@@ -79,20 +92,96 @@ impl Network {
                 }
             }
 
-            println!("Ошибка на эпохе {}: {}", e, sum / dataset.len() as f32);
+            if e % 100 == 0 {
+                println!("Ошибка на эпохе {}: {}", e, sum / dataset.len() as f32);
+            }
+
+        }
+    }
+
+    pub fn train_map(&mut self, dataset: &Vec<Vec<f32>>, learning_dist: f32, min_potential: f32, epochs_num: u16, a: f32, b: f32, w: usize, h: usize, w_res: u16, h_res: u16) {
+        let neurons_num = self.neurons.len() as u8;
+        for e in 0..epochs_num {
+            let mut sum = 0.0;
+            for j in 0..dataset.len() {
+                let mut min_distance = f32::MAX;
+                let mut winner_index = 0;
+                for i in 0..self.neurons.len() {
+                    if self.neurons[i].get_potential() > min_potential {
+                        let dist = calculate_distance(&dataset[j], &self.neurons[i].weights);
+                        if dist < min_distance {
+                            min_distance = dist;
+                            winner_index = i;
+                        }
+                    }
+                }
+                let x_win = (winner_index / h + 1) as f32 * w_res as f32 / w as f32 / 2.0;
+                let y_win = (winner_index % h + 1) as f32 * h_res as f32 / h as f32 / 2.0;
+                let mut neurons_to_train: Vec<usize> = vec![winner_index];
+                for i in 0..self.neurons.len() {
+                    if i == winner_index {
+                        continue;
+                    }
+                    let x = (i / h + 1) as f32 * w_res as f32 / w as f32 / 2.0;
+                    let y = (i % h + 1) as f32 * h_res as f32 / h as f32 / 2.0;
+                    let dist = calculate_distance(&vec![x_win, y_win], &vec![x, y]);
+                    if dist < learning_dist && self.neurons[i].get_potential() > min_potential {
+                        neurons_to_train.push(i);
+                    }
+                }
+                // println!("Neurons to train: {:?}", neurons_to_train);
+
+                sum += f32::powi(sub_vectors(&dataset[j], &self.neurons[winner_index].weights).iter().sum::<f32>() / dataset[j].len() as f32, 2);
+
+                let x_win = (neurons_to_train[0] / h + 1) as f32 * w_res as f32 / w as f32 / 2.0;
+                let y_win = (neurons_to_train[0] % h + 1) as f32 * h_res as f32 / h as f32 / 2.0;
+
+                for i in 0..neurons_to_train.len() {
+                    let index = neurons_to_train[i];
+                    // println!("Changing weights of neuron: {:?}", index);
+                    let sub = sub_vectors(&dataset[j], &self.neurons[index].weights);
+
+                    let x = (i / h + 1) as f32 * w_res as f32 / w as f32 / 2.0;
+                    let y = (i % h + 1) as f32 * h_res as f32 / h as f32 / 2.0;
+                    let dist = calculate_distance(&vec![x_win, y_win], &vec![x, y]);
+
+                    let mul_by = coefficient_fun(dist, e, a, b);
+
+                    self.neurons[index].weights = sum_vectors(&self.neurons[index].weights,&mult_by(&sub, mul_by));
+
+                    self.neurons[index].change_potential_winner(min_potential);
+                }
+
+                for i in 0..self.neurons.len() {
+                    if neurons_to_train.contains(&i) {
+                        continue;
+                    }
+
+                    self.neurons[i].change_potential(neurons_num);
+                }
+            }
+
+            if e % 100 == 0 {
+                println!("Ошибка на эпохе {}: {}", e, sum / dataset.len() as f32);
+            }
+
         }
     }
 }
 
-fn coefficient_fun(d: f32, k: usize, a: f32, b: f32) -> f32 {
+fn coefficient_fun(d: f32, k: u16, a: f32, b: f32) -> f32 {
     gauss_function(d, k) * learning_rate_func(k, a, b)
 }
 
-fn gauss_function(d: f32, k: usize) -> f32 {
-    f32::powf(E, -(d / (2 * k) as f32))
+fn gauss_function(d: f32, k: u16) -> f32 {
+    f32::powf(E, -(d / (2.0 * func(k))))
 }
 
-fn learning_rate_func(k: usize, a: f32, b: f32) -> f32 {
+fn func(k: u16) -> f32 {
+    100.0 / k as f32
+}
+
+fn learning_rate_func(k: u16, a: f32, b: f32) -> f32 {
     a / (k as f32 + b)
 }
 
@@ -102,6 +191,16 @@ fn sum_vectors(vec1: &Vec<f32>, vec2: &Vec<f32>) -> Vec<f32> {
 
 fn sub_vectors(vec1: &Vec<f32>, vec2: &Vec<f32>) -> Vec<f32> {
     vec1.iter().zip(vec2.iter()).map(|(x, y)| x - y).collect()
+}
+
+fn mult_by(vec: &Vec<f32>, mul_by: f32) -> Vec<f32> {
+    let mut res = Vec::with_capacity(vec.len());
+
+    for elem in vec {
+        res.push(elem * mul_by);
+    }
+
+    res
 }
 
 fn calculate_distance(vec1: &Vec<f32>, vec2: &Vec<f32>) -> f32 {
@@ -114,7 +213,7 @@ fn calculate_distance(vec1: &Vec<f32>, vec2: &Vec<f32>) -> f32 {
     f32::sqrt(sum)
 }
 
-fn prepare_dataset(dataset_path: &str) -> (Vec<Vec<f32>>, Vec<Vec<f32>>, [&str; 9]) {
+pub fn prepare_dataset(dataset_path: &str) -> (Vec<Vec<f32>>, Vec<Vec<f32>>, [&str; 9], [(f32, f32); 9]) {
     let result = Reader::from_path(dataset_path);
 
     if result.is_err() {
@@ -128,8 +227,8 @@ fn prepare_dataset(dataset_path: &str) -> (Vec<Vec<f32>>, Vec<Vec<f32>>, [&str; 
     
     let mut reader = result.unwrap();
 
-    let mut counter = 0;
     let mut stats = [(f32::MAX, f32::MIN); 9];
+    let mut sums = [0.0; 9];
     for (i, record) in reader.records().enumerate() {
         let spec = record.unwrap();
         dataset.push(vec![]);
@@ -143,6 +242,8 @@ fn prepare_dataset(dataset_path: &str) -> (Vec<Vec<f32>>, Vec<Vec<f32>>, [&str; 
                 stats[j - 1].1 = tmp;
             }
 
+            sums[j - 1] += f64::powi(tmp as f64, 2);
+
             dataset[i].push(tmp);
         }
     }
@@ -151,13 +252,13 @@ fn prepare_dataset(dataset_path: &str) -> (Vec<Vec<f32>>, Vec<Vec<f32>>, [&str; 
         normalized.push(vec![]);
 
         for j in 0..dataset[i].len() {
-            normalized[i].push(normalization(dataset[i][j], stats[j].0, stats[j].1))
+            normalized[i].push(normalization(dataset[i][j], f64::sqrt(sums[j]) as f32));
         }
     }
 
-    (dataset, normalized, names)
+    (dataset, normalized, names, stats)
 }
 
-fn normalization(x: f32, xmin: f32, xmax: f32) -> f32 {
-    (x - xmin) / (xmax - xmin)
+fn normalization(x: f32, div: f32) -> f32 {
+    x / div 
 }
