@@ -7,10 +7,11 @@ fn main() {
     let mut network = Network::new(neuron_count, 9);
     let (dataset, normalized, names, stats) = prepare_dataset("Country_Dataset.csv");
     let res1 = network.inference(&normalized);
-    network.train(&normalized, 0.0, 0.75, 1000, 3., 10.);
+    network.train(&normalized, 0.0, 0.75, 6000, 30., 100.);
     let res2 = network.inference(&normalized);
     println!("{:?}", count(&res1));
     println!("{:?}", count(&res2));
+    println!("{:?}", count(&res2).len());
 
     let points1 = generate_points(&dataset, res1);
     let points2 = generate_points(&dataset, res2);
@@ -20,12 +21,12 @@ fn main() {
         _ = draw(format!("output/after/{}.svg", names[i]).as_str(), names[i], points2[i].clone(), neuron_count as f32, stats[i].0, stats[i].1);
     }
 
-    let w = 10;
-    let h = 5;
+    let w = 5;
+    let h = 10;
     let w_res = 600;
-    let h_res = 600;
+    let h_res = 300;
     let mut map = Network::new((w * h) as u8, 9);
-    map.train_map(&normalized, 10., 0.75, 1000, 3., 10., w, h, w_res, h_res);
+    map.train_map(&normalized, 150., 0.75, 6000, 30., 100., w, h, w_res, h_res);
     let grey_values = prepare_data(&normalized);
     for i in 0..9 {
         _ = draw_map(format!("output/map/{}.svg", names[i]).as_str(), &grey_values[i], w, h, w_res, h_res);

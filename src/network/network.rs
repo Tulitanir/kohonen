@@ -1,6 +1,7 @@
-use std::f32::consts::E;
+use std::{f32::consts::E, usize};
 
 use csv::Reader;
+use rand::seq::index;
 
 use super::neuron::{self, Neuron};
 
@@ -76,7 +77,7 @@ impl Network {
                     // println!("Changing weights of neuron: {:?}", index);
                     let sub = sub_vectors(&dataset[j], &self.neurons[index].weights);
 
-                    let mul_by = learning_rate_func(e, a, b);
+                    let mul_by = func(e, epochs_num);
 
                     self.neurons[index].weights = sum_vectors(&self.neurons[index].weights,&mult_by(&sub, mul_by));
 
@@ -106,51 +107,58 @@ impl Network {
             for j in 0..dataset.len() {
                 let mut min_distance = f32::MAX;
                 let mut winner_index = 0;
+                let mut f = false;
                 for i in 0..self.neurons.len() {
                     if self.neurons[i].get_potential() > min_potential {
                         let dist = calculate_distance(&dataset[j], &self.neurons[i].weights);
                         if dist < min_distance {
                             min_distance = dist;
                             winner_index = i;
+                            f = true;
                         }
                     }
                 }
-                let x_win = (winner_index / h + 1) as f32 * w_res as f32 / w as f32 / 2.0;
-                let y_win = (winner_index % h + 1) as f32 * h_res as f32 / h as f32 / 2.0;
-                let mut neurons_to_train: Vec<usize> = vec![winner_index];
-                for i in 0..self.neurons.len() {
-                    if i == winner_index {
-                        continue;
+                let x_win = calc_w(winner_index, w, h, w_res);
+                let y_win = calc_h(winner_index, h, h_res);
+                let mut neurons_to_train: Vec<usize> = vec![];
+                if f {
+                    neurons_to_train.push(winner_index);
+
+                    for i in 0..self.neurons.len() {
+                        if i == winner_index {
+                            continue;
+                        }
+                        let x = calc_w(i, w, h, w_res);
+                        let y = calc_h(i, h, h_res);
+                        let dist = calculate_distance(&vec![x_win, y_win], &vec![x, y]);
+                        if dist < learning_dist && self.neurons[i].get_potential() > min_potential {
+                            neurons_to_train.push(i);
+                        }
                     }
-                    let x = (i / h + 1) as f32 * w_res as f32 / w as f32 / 2.0;
-                    let y = (i % h + 1) as f32 * h_res as f32 / h as f32 / 2.0;
-                    let dist = calculate_distance(&vec![x_win, y_win], &vec![x, y]);
-                    if dist < learning_dist && self.neurons[i].get_potential() > min_potential {
-                        neurons_to_train.push(i);
+                    println!("Neurons to train: {:?}", neurons_to_train);
+    
+                    sum += f32::powi(sub_vectors(&dataset[j], &self.neurons[winner_index].weights).iter().sum::<f32>() / dataset[j].len() as f32, 2);
+    
+                    let x_win = calc_w(neurons_to_train[0], w, h, w_res);
+                    let y_win = calc_h(neurons_to_train[0], h, h_res);
+    
+                    for i in 0..neurons_to_train.len() {
+                        let index = neurons_to_train[i];
+                        // println!("Changing weights of neuron: {:?}", index);
+                        let sub = sub_vectors(&dataset[j], &self.neurons[index].weights);
+    
+                        let x = calc_w(i, w, h, w_res);
+                        let y = calc_h(i, h, h_res);
+                        let dist = calculate_distance(&vec![x_win, y_win], &vec![x, y]);
+    
+                        let mul_by = coefficient_fun(dist, e, a, b, epochs_num);
+    
+                        self.neurons[index].weights = sum_vectors(&self.neurons[index].weights,&mult_by(&sub, mul_by));
+    
+                        self.neurons[index].change_potential_winner(min_potential);
                     }
                 }
-                // println!("Neurons to train: {:?}", neurons_to_train);
-
-                sum += f32::powi(sub_vectors(&dataset[j], &self.neurons[winner_index].weights).iter().sum::<f32>() / dataset[j].len() as f32, 2);
-
-                let x_win = (neurons_to_train[0] / h + 1) as f32 * w_res as f32 / w as f32 / 2.0;
-                let y_win = (neurons_to_train[0] % h + 1) as f32 * h_res as f32 / h as f32 / 2.0;
-
-                for i in 0..neurons_to_train.len() {
-                    let index = neurons_to_train[i];
-                    // println!("Changing weights of neuron: {:?}", index);
-                    let sub = sub_vectors(&dataset[j], &self.neurons[index].weights);
-
-                    let x = (i / h + 1) as f32 * w_res as f32 / w as f32 / 2.0;
-                    let y = (i % h + 1) as f32 * h_res as f32 / h as f32 / 2.0;
-                    let dist = calculate_distance(&vec![x_win, y_win], &vec![x, y]);
-
-                    let mul_by = coefficient_fun(dist, e, a, b);
-
-                    self.neurons[index].weights = sum_vectors(&self.neurons[index].weights,&mult_by(&sub, mul_by));
-
-                    self.neurons[index].change_potential_winner(min_potential);
-                }
+                
 
                 for i in 0..self.neurons.len() {
                     if neurons_to_train.contains(&i) {
@@ -169,16 +177,26 @@ impl Network {
     }
 }
 
-fn coefficient_fun(d: f32, k: u16, a: f32, b: f32) -> f32 {
-    gauss_function(d, k) * learning_rate_func(k, a, b)
+fn calc_w(index: usize, w: usize, h: usize, w_res: u16) -> f32 {
+    let step = w_res as f32 / w as f32;
+    (index / h + 1) as f32 * step - 0.5 * step
 }
 
-fn gauss_function(d: f32, k: u16) -> f32 {
-    f32::powf(E, -(d / (2.0 * func(k))))
+fn calc_h(index: usize, h: usize, h_res: u16) -> f32 {
+    let step = h_res as f32 / h as f32;
+    (index % h + 1) as f32 * step - 0.5 * step
 }
 
-fn func(k: u16) -> f32 {
-    100.0 / k as f32
+fn coefficient_fun(d: f32, k: u16, a: f32, b: f32, e: u16) -> f32 {
+    gauss_function(d, k, e) * learning_rate_func(k, a, b)
+}
+
+fn gauss_function(d: f32, k: u16, e: u16) -> f32 {
+    f32::powf(E, -(d / (2.0 * func(k, e))))
+}
+
+fn func(k: u16, epoch_num: u16) -> f32 {
+    (epoch_num as f32 - k as f32) / (epoch_num as f32 * 10.0)
 }
 
 fn learning_rate_func(k: u16, a: f32, b: f32) -> f32 {
