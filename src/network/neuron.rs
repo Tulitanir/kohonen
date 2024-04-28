@@ -12,7 +12,7 @@ impl Neuron {
         let mut rng = rand::thread_rng();
 
         for _i in 0..weights_num {
-            weights.push(rng.gen_range(0.0..1.0));
+            weights.push(rng.gen_range(0.0..0.5));
         }
 
         Neuron { weights, potential: 1.0 / neurons_num as f32}

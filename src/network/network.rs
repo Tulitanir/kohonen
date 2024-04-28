@@ -45,47 +45,51 @@ impl Network {
         let neurons_num = self.neurons.len() as u8;
         for e in 0..epochs_num {
             let mut sum = 0.0;
+            let mut distances = vec![(0.0, 0); self.neurons.len()];
             for j in 0..dataset.len() {
                 let mut min_distance = f32::MAX;
                 let mut winner_index = 0;
+                let mut f = false;
                 for i in 0..self.neurons.len() {
                     if self.neurons[i].get_potential() > min_potential {
                         let dist = calculate_distance(&dataset[j], &self.neurons[i].weights);
                         if dist < min_distance {
                             min_distance = dist;
                             winner_index = i;
+                            f = true;
                         }
                     }
                 }
-                let neurons_to_train: Vec<usize> = vec![winner_index];
-                // for i in 0..self.neurons.len() {
-                //     if i == winner_index {
-                //         continue;
-                //     }
 
-                //     let dist = calculate_distance(&self.neurons[winner_index].weights, &self.neurons[i].weights);
-                //     if dist < learning_dist && self.neurons[i].get_potential() > min_potential {
-                //         neurons_to_train.push(i);
-                //     }
-                // }
-                // println!("Neurons to train: {:?}", neurons_to_train);
-
-                sum += f32::powi(sub_vectors(&dataset[j], &self.neurons[winner_index].weights).iter().sum::<f32>() / dataset[j].len() as f32, 2);
-
-                for i in 0..neurons_to_train.len() {
-                    let index = neurons_to_train[i];
+                if f == true {
+                    distances[winner_index].0 += min_distance;
+                    distances[winner_index].1 += 1;
+                    // let neurons_to_train: Vec<usize> = vec![winner_index];
+                    // for i in 0..self.neurons.len() {
+                    //     if i == winner_index {
+                    //         continue;
+                    //     }
+    
+                    //     let dist = calculate_distance(&self.neurons[winner_index].weights, &self.neurons[i].weights);
+                    //     if dist < learning_dist && self.neurons[i].get_potential() > min_potential {
+                    //         neurons_to_train.push(i);
+                    //     }
+                    // }
+                    // println!("Neurons to train: {:?}", neurons_to_train);
+    
+                    sum += f32::powi(sub_vectors(&dataset[j], &self.neurons[winner_index].weights).iter().sum::<f32>() / dataset[j].len() as f32, 2);
+    
                     // println!("Changing weights of neuron: {:?}", index);
-                    let sub = sub_vectors(&dataset[j], &self.neurons[index].weights);
-
-                    let mul_by = func(e, epochs_num);
-
-                    self.neurons[index].weights = sum_vectors(&self.neurons[index].weights,&mult_by(&sub, mul_by));
-
-                    self.neurons[index].change_potential_winner(min_potential);
+                    let sub = sub_vectors(&dataset[j], &self.neurons[winner_index].weights);
+    
+                    let mul_by = learning_rate_func(e, a, b);
+    
+                    self.neurons[winner_index].weights = sum_vectors(&self.neurons[winner_index].weights,&mult_by(&sub, mul_by));
+    
+                    self.neurons[winner_index].change_potential_winner(min_potential);
                 }
-
                 for i in 0..self.neurons.len() {
-                    if neurons_to_train.contains(&i) {
+                    if i == winner_index {
                         continue;
                     }
 
@@ -93,8 +97,18 @@ impl Network {
                 }
             }
 
-            if e % 100 == 0 {
-                println!("Ошибка на эпохе {}: {}", e, sum / dataset.len() as f32);
+            if e % (epochs_num / 100) == 0 {
+ //               println!("Ошибка на эпохе {}: {}", e, sum / dataset.len() as f32);
+
+                let mut sum_of_vals = 0.0;
+    
+                for &(val, count) in &distances {
+                    sum_of_vals += val / count as f32;
+                }
+                
+                let avg = sum_of_vals / distances.len() as f32;
+
+                println!("Среднее внутрикластерное расстояние на эпохе {} равно: {}", e, avg);
             }
 
         }
@@ -104,6 +118,7 @@ impl Network {
         let neurons_num = self.neurons.len() as u8;
         for e in 0..epochs_num {
             let mut sum = 0.0;
+            let mut distances = vec![(0.0, 0); self.neurons.len()];
             for j in 0..dataset.len() {
                 let mut min_distance = f32::MAX;
                 let mut winner_index = 0;
@@ -122,6 +137,8 @@ impl Network {
                 let y_win = calc_h(winner_index, h, h_res);
                 let mut neurons_to_train: Vec<usize> = vec![];
                 if f {
+                    distances[winner_index].0 += min_distance;
+                    distances[winner_index].1 += 1;
                     neurons_to_train.push(winner_index);
 
                     for i in 0..self.neurons.len() {
@@ -135,7 +152,7 @@ impl Network {
                             neurons_to_train.push(i);
                         }
                     }
-                    println!("Neurons to train: {:?}", neurons_to_train);
+                    // println!("Neurons to train: {:?}", neurons_to_train);
     
                     sum += f32::powi(sub_vectors(&dataset[j], &self.neurons[winner_index].weights).iter().sum::<f32>() / dataset[j].len() as f32, 2);
     
@@ -146,12 +163,12 @@ impl Network {
                         let index = neurons_to_train[i];
                         // println!("Changing weights of neuron: {:?}", index);
                         let sub = sub_vectors(&dataset[j], &self.neurons[index].weights);
-    
                         let x = calc_w(i, w, h, w_res);
                         let y = calc_h(i, h, h_res);
                         let dist = calculate_distance(&vec![x_win, y_win], &vec![x, y]);
     
                         let mul_by = coefficient_fun(dist, e, a, b, epochs_num);
+
     
                         self.neurons[index].weights = sum_vectors(&self.neurons[index].weights,&mult_by(&sub, mul_by));
     
@@ -169,10 +186,23 @@ impl Network {
                 }
             }
 
-            if e % 100 == 0 {
-                println!("Ошибка на эпохе {}: {}", e, sum / dataset.len() as f32);
-            }
+            if e % (epochs_num / 100) == 0 {
+                println!("{:?}", distances);
+                //println!("Ошибка на эпохе {}: {}", e, sum / dataset.len() as f32);
+               
+                let mut sum_of_vals = 0.0;
+    
+                for &(val, count) in &distances {
+                    if count == 0 {
+                        continue;
+                    }
+                    sum_of_vals += val / count as f32;
+                }
+                
+                let avg = sum_of_vals / distances.len() as f32;
 
+                println!("Среднее внутрикластерное расстояние на эпохе {} равно: {}", e, avg);
+            }
         }
     }
 }
@@ -196,7 +226,7 @@ fn gauss_function(d: f32, k: u16, e: u16) -> f32 {
 }
 
 fn func(k: u16, epoch_num: u16) -> f32 {
-    (epoch_num as f32 - k as f32) / (epoch_num as f32 * 10.0)
+    (epoch_num as f32 - k as f32) / (epoch_num as f32 / 1000000.0)
 }
 
 fn learning_rate_func(k: u16, a: f32, b: f32) -> f32 {
